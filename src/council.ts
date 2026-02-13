@@ -1,14 +1,13 @@
 /**
- * Three Minds v2 - 核心协作引擎
+ * Three Minds v2 - Core Collaboration Engine
  * 
- * 使用 Claude Code CLI 启动真正能干活的子 agent
+ * Uses Claude Code CLI to spawn real working sub-agents
  */
 
 import { v4 as uuidv4 } from 'uuid';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import {
   CouncilConfig,
   CouncilSession,
@@ -17,7 +16,7 @@ import {
 } from './types';
 
 /**
- * 执行 Claude Code CLI
+ * Execute Claude Code CLI
  */
 function runClaude(
   prompt: string,
@@ -26,11 +25,11 @@ function runClaude(
   timeoutMs: number = 300000
 ): string {
   const result = spawnSync('claude', [
-    '--print',                          // 非交互模式
-    '--output-format', 'text',          // 纯文本输出
+    '--print',                          // Non-interactive mode
+    '--output-format', 'text',          // Plain text output
     '--append-system-prompt', systemPrompt,
-    '--dangerously-skip-permissions',   // 跳过权限确认（自动接受）
-    '--max-turns', '10',                // 最多 10 轮工具调用
+    '--dangerously-skip-permissions',   // Skip permission prompts (auto-accept)
+    '--max-turns', '10',                // Max 10 tool call turns
     prompt,
   ], {
     cwd: workDir,
@@ -48,7 +47,7 @@ function runClaude(
 }
 
 /**
- * 解析共识投票
+ * Parse consensus vote
  */
 function parseConsensus(content: string): boolean {
   const match = content.match(/\[CONSENSUS:\s*(YES|NO)\]/i);
@@ -59,7 +58,7 @@ function parseConsensus(content: string): boolean {
 }
 
 /**
- * 构建 agent 任务 prompt
+ * Build agent task prompt
  */
 function buildAgentPrompt(
   agent: AgentPersona,
@@ -70,73 +69,73 @@ function buildAgentPrompt(
 ): string {
   const otherAgents = allAgents.filter(a => a.name !== agent.name);
   
-  // 构建之前的讨论历史
+  // Build previous discussion history
   let history = '';
   if (previousResponses.length > 0) {
-    history = '\n\n## 之前的协作记录\n\n';
+    history = '\n\n## Previous Collaboration Log\n\n';
     let currentRound = 0;
     for (const resp of previousResponses) {
       if (resp.round !== currentRound) {
         currentRound = resp.round;
-        history += `### 第 ${currentRound} 轮\n\n`;
+        history += `### Round ${currentRound}\n\n`;
       }
       const cleanContent = resp.content.replace(/\[CONSENSUS:\s*(YES|NO)\]/gi, '').trim();
-      // 只保留关键信息，避免 prompt 太长
+      // Keep only key info to avoid prompt getting too long
       const preview = cleanContent.length > 800 ? cleanContent.slice(0, 800) + '...' : cleanContent;
-      history += `**${resp.agent}** (${resp.consensus ? '✅同意结束' : '❌继续'}):\n${preview}\n\n`;
+      history += `**${resp.agent}** (${resp.consensus ? '✅ Agreed to finish' : '❌ Continue'}):\n${preview}\n\n`;
     }
   }
 
-  return `# 第 ${round} 轮协作
+  return `# Round ${round} Collaboration
 
-## 任务
+## Task
 ${task}
 
-## 你的伙伴
+## Your Partners
 ${otherAgents.map(a => `- ${a.emoji} ${a.name}`).join('\n')}
 ${history}
-## 你的工作
+## Your Work
 
-请：
-1. **查看当前状态** - 读取相关文件，了解当前代码/项目状态
-2. **执行必要操作** - 根据你的专长，编写代码、修改文件、运行测试等
-3. **审核他人工作** - 如果其他成员已有产出，审核并提出建议或直接改进
-4. **汇报成果** - 简要说明你做了什么
+Please:
+1. **Check current state** - Read relevant files, understand current code/project status
+2. **Execute necessary actions** - Based on your expertise, write code, modify files, run tests, etc.
+3. **Review others' work** - If other members have output, review and suggest improvements or improve directly
+4. **Report results** - Briefly explain what you did
 
-## 共识投票
+## Consensus Vote
 
-在回复**末尾**，必须投票（二选一）：
+At the **end** of your response, you must vote (choose one):
 
-- \`[CONSENSUS: YES]\` - 任务完成，质量达标，可以结束
-- \`[CONSENSUS: NO]\` - 还有工作要做或问题要解决
+- \`[CONSENSUS: YES]\` - Task complete, quality acceptable, can finish
+- \`[CONSENSUS: NO]\` - More work to do or issues to resolve
 
-只有**所有三人都投 YES** 时协作才会结束。
+Collaboration only ends when **all three vote YES**.
 
-开始工作吧！`;
+Start working!`;
 }
 
 /**
- * 构建 agent 的 system prompt
+ * Build agent system prompt
  */
 function buildSystemPrompt(agent: AgentPersona, allAgents: AgentPersona[]): string {
-  return `# 你的身份
+  return `# Your Identity
 
-你是 ${agent.emoji} **${agent.name}**。
+You are ${agent.emoji} **${agent.name}**.
 
 ${agent.persona}
 
-# 协作规则
+# Collaboration Rules
 
-- 你是三人协作小组的一员
-- 你可以自由读取、创建、修改工作目录中的文件
-- 你可以执行代码、运行测试
-- 审核他人工作时，可以直接修改文件来改进
-- 保持简洁高效，避免冗长解释
-- 每次回复末尾必须投票 [CONSENSUS: YES] 或 [CONSENSUS: NO]`;
+- You are a member of a three-person collaboration group
+- You can freely read, create, and modify files in the working directory
+- You can execute code and run tests
+- When reviewing others' work, you can directly modify files to improve them
+- Be concise and efficient, avoid lengthy explanations
+- You must vote [CONSENSUS: YES] or [CONSENSUS: NO] at the end of each response`;
 }
 
 /**
- * Three Minds 协作引擎
+ * Three Minds Collaboration Engine
  */
 export class Council {
   private config: CouncilConfig;
@@ -148,7 +147,7 @@ export class Council {
   }
 
   /**
-   * 开始协作
+   * Start collaboration
    */
   async run(task: string): Promise<CouncilSession> {
     const session: CouncilSession = {
@@ -160,24 +159,24 @@ export class Council {
       startTime: new Date().toISOString(),
     };
 
-    this.log(`\n🧠 Three Minds v2 - 三个臭皮匠协作系统\n`);
-    this.log(`📋 任务: ${task}`);
-    this.log(`📁 工作目录: ${this.config.projectDir}`);
-    this.log(`👥 参与者: ${this.config.agents.map(a => `${a.emoji} ${a.name}`).join(', ')}`);
-    this.log(`⏱️  最大轮数: ${this.config.maxRounds}`);
+    this.log(`\n🧠 Three Minds v2 - Multi-Agent Collaboration System\n`);
+    this.log(`📋 Task: ${task}`);
+    this.log(`📁 Working Directory: ${this.config.projectDir}`);
+    this.log(`👥 Participants: ${this.config.agents.map(a => `${a.emoji} ${a.name}`).join(', ')}`);
+    this.log(`⏱️  Max Rounds: ${this.config.maxRounds}`);
     this.log(`${'━'.repeat(60)}\n`);
 
     try {
       for (let round = 1; round <= this.config.maxRounds; round++) {
-        this.log(`\n🔄 第 ${round} 轮\n`);
+        this.log(`\n🔄 Round ${round}\n`);
 
         const roundVotes: boolean[] = [];
 
-        // 依次让每个 agent 工作
+        // Let each agent work in sequence
         for (const agent of this.config.agents) {
-          this.log(`${agent.emoji} ${agent.name} 开始工作...`);
+          this.log(`${agent.emoji} ${agent.name} working...`);
 
-          // 构建 prompt
+          // Build prompt
           const prompt = buildAgentPrompt(
             agent,
             task,
@@ -188,12 +187,12 @@ export class Council {
           const systemPrompt = buildSystemPrompt(agent, this.config.agents);
 
           try {
-            // 调用 Claude Code
+            // Call Claude Code
             const content = runClaude(
               prompt,
               systemPrompt,
               this.config.projectDir,
-              300000 // 5 分钟超时
+              300000 // 5 minute timeout
             );
 
             const consensus = parseConsensus(content);
@@ -209,16 +208,16 @@ export class Council {
             };
             session.responses.push(response);
 
-            // 打印摘要
+            // Print summary
             const lines = content.split('\n').filter(l => l.trim());
             const preview = lines.slice(0, 3).join(' ').slice(0, 150);
-            this.log(`  ✅ 完成 | 共识: ${consensus ? 'YES ✓' : 'NO ✗'}`);
+            this.log(`  ✅ Done | Consensus: ${consensus ? 'YES ✓' : 'NO ✗'}`);
             this.log(`  📝 ${preview}...`);
           } catch (error: any) {
-            this.log(`  ❌ 错误: ${error.message}`);
+            this.log(`  ❌ Error: ${error.message}`);
             roundVotes.push(false);
             
-            // 记录失败响应
+            // Record failed response
             session.responses.push({
               agent: agent.name,
               round,
@@ -232,40 +231,40 @@ export class Council {
           this.log('');
         }
 
-        // 检查共识
+        // Check consensus
         const allYes = roundVotes.length === this.config.agents.length && 
                        roundVotes.every(v => v === true);
         
         if (allYes) {
-          this.log(`\n✅ 共识达成！(第 ${round} 轮)\n`);
+          this.log(`\n✅ Consensus reached! (Round ${round})\n`);
           session.status = 'consensus';
           break;
         } else {
           const yesCount = roundVotes.filter(v => v).length;
-          this.log(`📊 本轮投票: ${yesCount}/${this.config.agents.length} YES\n`);
+          this.log(`📊 Round votes: ${yesCount}/${this.config.agents.length} YES\n`);
         }
       }
 
       if (session.status === 'running') {
         session.status = 'max_rounds';
-        this.log(`\n⚠️ 达到最大轮数 (${this.config.maxRounds})，结束协作\n`);
+        this.log(`\n⚠️ Reached max rounds (${this.config.maxRounds}), ending collaboration\n`);
       }
 
       session.endTime = new Date().toISOString();
 
-      // 生成总结
+      // Generate summary
       session.finalSummary = this.generateSummary(session);
       this.log(`\n${'━'.repeat(60)}`);
       this.log(`\n${session.finalSummary}`);
 
-      // 保存讨论记录到工作目录
+      // Save transcript to working directory
       this.saveTranscript(session);
 
       return session;
     } catch (error: any) {
       session.status = 'error';
       session.endTime = new Date().toISOString();
-      this.log(`\n❌ 错误: ${error.message}`);
+      this.log(`\n❌ Error: ${error.message}`);
       throw error;
     }
   }
@@ -279,30 +278,30 @@ export class Council {
   private generateSummary(session: CouncilSession): string {
     const lines: string[] = [];
     
-    lines.push(`# 📋 协作总结\n`);
-    lines.push(`- **任务**: ${session.task}`);
-    lines.push(`- **状态**: ${session.status === 'consensus' ? '✅ 达成共识' : '⚠️ 达到最大轮数'}`);
+    lines.push(`# 📋 Collaboration Summary\n`);
+    lines.push(`- **Task**: ${session.task}`);
+    lines.push(`- **Status**: ${session.status === 'consensus' ? '✅ Consensus Reached' : '⚠️ Max Rounds Reached'}`);
     
     const maxRound = session.responses.length > 0 
       ? Math.max(...session.responses.map(r => r.round))
       : 0;
-    lines.push(`- **总轮数**: ${maxRound}`);
-    lines.push(`- **工作目录**: ${session.config.projectDir}\n`);
+    lines.push(`- **Total Rounds**: ${maxRound}`);
+    lines.push(`- **Working Directory**: ${session.config.projectDir}\n`);
 
-    // 每个 agent 的最后发言
-    lines.push(`## 各成员最终状态\n`);
+    // Each agent's final response
+    lines.push(`## Member Final Status\n`);
     const lastResponses = session.responses.filter(r => r.round === maxRound);
     
     for (const resp of lastResponses) {
       const agent = session.config.agents.find(a => a.name === resp.agent);
       const emoji = agent?.emoji || '🤖';
       lines.push(`### ${emoji} ${resp.agent}`);
-      lines.push(`- **共识投票**: ${resp.consensus ? '✅ YES' : '❌ NO'}`);
+      lines.push(`- **Consensus Vote**: ${resp.consensus ? '✅ YES' : '❌ NO'}`);
       
-      // 提取关键内容
+      // Extract key content
       const cleanContent = resp.content.replace(/\[CONSENSUS:\s*(YES|NO)\]/gi, '').trim();
       const preview = cleanContent.slice(0, 400) + (cleanContent.length > 400 ? '...' : '');
-      lines.push(`- **最后发言**:\n${preview}`);
+      lines.push(`- **Final Response**:\n${preview}`);
       lines.push('');
     }
 
@@ -314,17 +313,17 @@ export class Council {
     const filename = `three-minds-${timestamp}.md`;
     const filepath = path.join(this.config.projectDir, filename);
 
-    let content = `# Three Minds 协作记录\n\n`;
-    content += `- **时间**: ${session.startTime}\n`;
-    content += `- **任务**: ${session.task}\n`;
-    content += `- **状态**: ${session.status}\n\n`;
+    let content = `# Three Minds Collaboration Transcript\n\n`;
+    content += `- **Time**: ${session.startTime}\n`;
+    content += `- **Task**: ${session.task}\n`;
+    content += `- **Status**: ${session.status}\n\n`;
     content += `---\n\n`;
 
     let currentRound = 0;
     for (const resp of session.responses) {
       if (resp.round !== currentRound) {
         currentRound = resp.round;
-        content += `## 第 ${currentRound} 轮\n\n`;
+        content += `## Round ${currentRound}\n\n`;
       }
       const agent = session.config.agents.find(a => a.name === resp.agent);
       const emoji = agent?.emoji || '🤖';
@@ -336,24 +335,24 @@ export class Council {
     content += session.finalSummary || '';
 
     fs.writeFileSync(filepath, content);
-    this.log(`💾 协作记录已保存: ${filepath}`);
+    this.log(`💾 Transcript saved: ${filepath}`);
   }
 }
 
 /**
- * 加载配置
+ * Load configuration
  */
 export async function loadConfig(configPath: string): Promise<CouncilConfig> {
   const configDir = path.join(__dirname, '..', 'configs');
   
-  // 检查内置配置
+  // Check built-in configs
   if (!configPath.includes('/') && !configPath.endsWith('.json')) {
     const builtinPath = path.join(configDir, `${configPath}.json`);
     try {
       const content = fs.readFileSync(builtinPath, 'utf-8');
       return JSON.parse(content);
     } catch {
-      // 继续尝试作为文件路径
+      // Continue trying as file path
     }
   }
   
@@ -362,35 +361,35 @@ export async function loadConfig(configPath: string): Promise<CouncilConfig> {
 }
 
 /**
- * 默认配置
+ * Default configuration
  */
 export function getDefaultConfig(projectDir: string): CouncilConfig {
   return {
-    name: '代码协作三人组',
+    name: 'Code Collaboration Trio',
     agents: [
       {
-        name: '架构师',
+        name: 'Architect',
         emoji: '🏗️',
-        persona: `你是一位系统架构师。
-你关注：代码结构、设计模式、可扩展性、长期维护性。
-你会审查代码的整体设计，提出架构层面的改进建议。
-你可以读取文件、修改代码结构、重构模块。`,
+        persona: `You are a system architect.
+You focus on: code structure, design patterns, scalability, long-term maintainability.
+You review overall code design and propose architectural improvements.
+You can read files, modify code structure, refactor modules.`,
       },
       {
-        name: '工程师',
+        name: 'Engineer',
         emoji: '⚙️',
-        persona: `你是一位实现工程师。
-你关注：代码质量、错误处理、边界情况、性能优化。
-你会实际编写和修改代码，确保功能正确实现。
-你可以读取文件、编写代码、运行测试。`,
+        persona: `You are an implementation engineer.
+You focus on: code quality, error handling, edge cases, performance optimization.
+You actually write and modify code, ensuring correct implementation.
+You can read files, write code, run tests.`,
       },
       {
-        name: '审核员',
+        name: 'Reviewer',
         emoji: '🔍',
-        persona: `你是一位代码审核员。
-你关注：代码规范、潜在 bug、安全问题、文档完整性。
-你会仔细审查代码，找出问题并提出修复建议。
-你可以读取文件、添加注释、修复明显问题。`,
+        persona: `You are a code reviewer.
+You focus on: coding standards, potential bugs, security issues, documentation completeness.
+You carefully review code, find issues, and propose fixes.
+You can read files, add comments, fix obvious issues.`,
       },
     ],
     maxRounds: 15,

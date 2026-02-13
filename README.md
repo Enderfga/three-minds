@@ -1,8 +1,6 @@
 # Three Minds 🧠🧠🧠
 
-**三个臭皮匠顶个诸葛亮** - A Multi-Agent Collaboration System
-
-Three AI agents with different personas working together on the same codebase. Not just talking—they actually read files, write code, and run tests.
+**Multi-Agent Collaboration System** - Three AI agents working together on the same codebase. Not just talking—they actually read files, write code, and run tests.
 
 ## Features
 
@@ -48,6 +46,9 @@ three-minds "Refactor this module" --dir ./module --max-rounds 5
 
 # Save result to JSON
 three-minds "task description" --dir ./project --output result.json
+
+# Quiet mode (no terminal output)
+three-minds "task" --dir ./project --quiet --output result.json
 ```
 
 ## Preset Configurations
@@ -63,7 +64,7 @@ three-minds "task description" --dir ./project --output result.json
 - ✅ **Quality Reviewer** - Readability, naming conventions, test coverage
 
 ### idea-brainstorm - Research Brainstorm Trio
-- 📚 **Literature Expert** - Related work, theoretical foundation
+- 📚 **Literature Expert** - Related work, theoretical foundations
 - 💡 **Creative Thinker** - Novel approaches, unconventional ideas
 - 🔬 **Feasibility Analyst** - Technical constraints, implementation path
 
@@ -101,56 +102,61 @@ Create a JSON config file:
 }
 ```
 
-Then: `three-minds "task" --config ./my-config.json`
+Then run:
 
-## Workflow
+```bash
+three-minds "task description" --config ./my-config.json --dir ./project
+```
+
+## How It Works
 
 ```
 ┌──────────────────────────────────────────┐
 │              Round N                      │
 ├──────────────────────────────────────────┤
 │  🏗️ Architect                            │
-│  → Read files, review structure          │
-│  → Execute necessary refactoring         │
-│  → Vote [CONSENSUS: YES/NO]              │
+│  → Reads files, reviews structure         │
+│  → Executes necessary refactoring         │
+│  → Votes [CONSENSUS: YES/NO]             │
 ├──────────────────────────────────────────┤
 │  ⚙️ Engineer                             │
-│  → Review architect's changes            │
-│  → Add implementation details, fix bugs  │
-│  → Vote [CONSENSUS: YES/NO]              │
+│  → Reviews architect's changes            │
+│  → Implements details, fixes issues       │
+│  → Votes [CONSENSUS: YES/NO]             │
 ├──────────────────────────────────────────┤
 │  🔍 Reviewer                             │
-│  → Review all changes                    │
-│  → Check standards, bugs, docs           │
-│  → Vote [CONSENSUS: YES/NO]              │
+│  → Reviews all changes                    │
+│  → Checks standards, bugs, docs           │
+│  → Votes [CONSENSUS: YES/NO]             │
 └──────────────────────────────────────────┘
           ↓
     All YES? → Done
           ↓ NO
-    Continue to next round...
+    Continue next round...
 ```
 
 ## Output
 
-1. **Terminal Output** - Real-time progress and votes from each agent
-2. **Markdown Transcript** - Auto-saved to `three-minds-{timestamp}.md` in working directory
-3. **JSON Result** - Use `--output` to save complete session data
+1. **Terminal Output** - Real-time progress and voting results
+2. **Markdown Transcript** - Auto-saved in project directory as `three-minds-{timestamp}.md`
+3. **JSON Result** - Use `--output result.json` to save full session data
 
 ## Use Cases
 
-- **Code Review** - Multi-angle review of PRs or code changes
+- **Code Review** - Multi-perspective PR review
 - **Refactoring** - Collaborative complex code refactoring
-- **Feature Development** - From design to implementation
-- **Bug Fixing** - Locate issues and verify fixes
-- **Documentation** - Improve and complete project docs
-- **Research Brainstorming** - Evaluate research ideas from multiple angles
-- **Paper Writing** - Review and improve academic papers
+- **New Features** - Design to implementation collaboration
+- **Bug Fixing** - Locate problems and verify fixes
+- **Documentation** - Improve project documentation
+- **Research** - Brainstorm and evaluate ideas
+- **Writing** - Collaborative paper or doc writing
 
 ## Notes
 
-- Each agent will actually modify files—recommend using on a git branch
-- Default max 15 rounds, adjustable via `--max-rounds`
-- If consensus can't be reached, check if task description is clear
+- Each agent actually modifies files—recommend using on git branches
+- Default max 15 rounds, adjust with `--max-rounds`
+- If consensus takes too long, check if task description is clear
+- Each agent has 5 minute timeout per round
 
 ## License
 

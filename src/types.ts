@@ -1,32 +1,32 @@
 /**
- * Three Minds v2 - 类型定义
+ * Three Minds v2 - Type Definitions
  */
 
 export interface AgentPersona {
-  name: string;           // 显示名称
-  emoji: string;          // 标识 emoji
-  persona: string;        // 人设描述（会作为 system prompt 的一部分）
+  name: string;           // Display name
+  emoji: string;          // Identifier emoji
+  persona: string;        // Persona description (becomes part of system prompt)
 }
 
 export interface CouncilConfig {
   name: string;
   agents: AgentPersona[];
   maxRounds: number;
-  projectDir: string;     // 共享工作目录
+  projectDir: string;     // Shared working directory
 }
 
 export interface AgentResponse {
   agent: string;
   round: number;
-  content: string;        // agent 的回复
-  consensus: boolean;     // 是否投票结束
-  sessionKey: string;     // 子 session key
+  content: string;        // Agent's response
+  consensus: boolean;     // Whether voted to finish
+  sessionKey: string;     // Child session key
   timestamp: string;
 }
 
 export interface CouncilSession {
   id: string;
-  task: string;           // 任务描述
+  task: string;           // Task description
   config: CouncilConfig;
   responses: AgentResponse[];
   status: 'running' | 'consensus' | 'max_rounds' | 'error';

@@ -1,80 +1,78 @@
 ---
 name: three-minds
-description: 三个能干活的 AI 分身协作系统。用 Claude Code 启动三个不同人设的 coding agent，共享同一个工作目录，多轮协作直到达成共识。适用于代码审查、方案评审、重构任务等需要多视角协作的场景。
+description: A multi-agent collaboration system using Claude Code. Spawns three AI agents with different personas to work together on the same codebase. They can read files, write code, run tests, and vote on consensus.
 version: 2.0.0
-author: Enderfga
 ---
 
 # Three Minds - 三个臭皮匠顶个诸葛亮
 
-真正能干活的多 Agent 协作系统。不是纸上谈兵，而是真的能读文件、改代码、跑测试。
+A real multi-agent collaboration system. Not just talking—they actually read files, write code, and run tests.
 
-## 核心特性
+## Core Features
 
-- 🔧 **真正执行** - 每个 agent 都能读取文件、编写代码、运行测试
-- 👥 **多视角协作** - 三个不同人设的 agent 互相审核
-- ✅ **共识机制** - 全员 YES 才结束，确保质量
-- 📁 **共享目录** - 在同一个项目上协作
-- 📝 **完整记录** - 自动保存讨论和改动历史
+- 🔧 **Real Execution** - Each agent can read files, write code, run tests
+- 👥 **Multi-Perspective** - Three agents with different expertise review each other's work
+- ✅ **Consensus Voting** - All must vote YES to finish, ensuring quality
+- 📁 **Shared Workspace** - Collaborate on the same project directory
+- 📝 **Full Transcript** - Auto-saves discussion and changes history
 
-## 使用方法
+## Usage
 
 ```bash
-# 基础用法
-three-minds "审查并改进这个项目的代码质量" --dir ./my-project
+# Basic usage
+three-minds "Review and improve this project's code quality" --dir ./my-project
 
-# 使用代码审查配置（安全+性能+质量三人组）
-three-minds "审查 src/ 目录的所有代码" --config code-review --dir ./project
+# Use code-review preset (security + performance + quality trio)
+three-minds "Review all code in src/" --config code-review --dir ./project
 
-# 指定最大轮数
-three-minds "重构这个模块" --dir ./module --max-rounds 5
+# Specify max rounds
+three-minds "Refactor this module" --dir ./module --max-rounds 5
 
-# 保存结果到 JSON
-three-minds "任务描述" --dir ./project --output result.json
+# Save result to JSON
+three-minds "task description" --dir ./project --output result.json
 ```
 
-## 触发词
+## Trigger Words
 
-- "三个臭皮匠"
 - "three minds"
-- "多 agent 协作"
-- "让三个 agent 一起审查"
-- "协作完成这个任务"
+- "multi-agent collaboration"
+- "let three agents review"
+- "collaborative task"
 
-## 预设配置
+## Preset Configurations
 
-### 默认配置 - 代码协作三人组
-- 🏗️ **架构师** - 关注代码结构、设计模式、可扩展性
-- ⚙️ **工程师** - 关注代码质量、错误处理、性能优化
-- 🔍 **审核员** - 关注代码规范、潜在 bug、文档完整性
+### Default - Code Collaboration Trio
+- 🏗️ **Architect** - Code structure, design patterns, scalability
+- ⚙️ **Engineer** - Code quality, error handling, performance
+- 🔍 **Reviewer** - Code standards, potential bugs, documentation
 
-### code-review - 代码审查三人组
-- 🛡️ **安全专家** - 关注安全漏洞、注入风险、权限问题
-- ⚡ **性能工程师** - 关注算法复杂度、内存使用、查询优化
-- ✅ **质量审查员** - 关注可读性、命名规范、测试覆盖
+### code-review - Code Review Trio
+- 🛡️ **Security Expert** - Vulnerabilities, injection risks, permissions
+- ⚡ **Performance Engineer** - Algorithm complexity, memory, query optimization
+- ✅ **Quality Reviewer** - Readability, naming conventions, test coverage
 
-## 自定义配置
+## Custom Configuration
 
-创建 JSON 配置文件：
+Create a JSON config file:
 
 ```json
 {
-  "name": "我的三人组",
+  "name": "My Custom Trio",
   "agents": [
     {
-      "name": "专家A",
+      "name": "Expert A",
       "emoji": "🎯",
-      "persona": "你是一位...关注..."
+      "persona": "You are a... focusing on..."
     },
     {
-      "name": "专家B",
+      "name": "Expert B",
       "emoji": "🔬",
-      "persona": "你是一位...擅长..."
+      "persona": "You are a... specializing in..."
     },
     {
-      "name": "专家C",
+      "name": "Expert C",
       "emoji": "📊",
-      "persona": "你是一位...负责..."
+      "persona": "You are a... responsible for..."
     }
   ],
   "maxRounds": 10,
@@ -82,57 +80,56 @@ three-minds "任务描述" --dir ./project --output result.json
 }
 ```
 
-然后：`three-minds "任务" --config ./my-config.json`
+Then: `three-minds "task" --config ./my-config.json`
 
-## 工作流程
+## Workflow
 
 ```
 ┌──────────────────────────────────────────┐
-│              第 N 轮                      │
+│              Round N                      │
 ├──────────────────────────────────────────┤
-│  🏗️ 架构师                               │
-│  → 读取文件，审查结构                     │
-│  → 执行必要的重构                         │
-│  → 投票 [CONSENSUS: YES/NO]              │
+│  🏗️ Architect                            │
+│  → Reads files, reviews structure         │
+│  → Executes necessary refactoring         │
+│  → Votes [CONSENSUS: YES/NO]             │
 ├──────────────────────────────────────────┤
-│  ⚙️ 工程师                               │
-│  → 审查架构师的改动                       │
-│  → 补充实现细节，修复问题                 │
-│  → 投票 [CONSENSUS: YES/NO]              │
+│  ⚙️ Engineer                             │
+│  → Reviews architect's changes            │
+│  → Implements details, fixes issues       │
+│  → Votes [CONSENSUS: YES/NO]             │
 ├──────────────────────────────────────────┤
-│  🔍 审核员                               │
-│  → 审查所有改动                          │
-│  → 检查规范、bug、文档                    │
-│  → 投票 [CONSENSUS: YES/NO]              │
+│  🔍 Reviewer                             │
+│  → Reviews all changes                    │
+│  → Checks standards, bugs, docs           │
+│  → Votes [CONSENSUS: YES/NO]             │
 └──────────────────────────────────────────┘
           ↓
-    全员 YES？→ 结束
+    All YES? → Done
           ↓ NO
-    继续下一轮...
+    Continue next round...
 ```
 
-## 输出
+## Output
 
-1. **终端实时输出** - 每个 agent 的工作进展和投票
-2. **Markdown 记录** - 自动保存在工作目录 `three-minds-{timestamp}.md`
-3. **JSON 结果** - 使用 `--output` 保存完整 session 数据
+1. **Terminal Output** - Real-time progress and voting
+2. **Markdown Transcript** - Auto-saved in project dir `three-minds-{timestamp}.md`
+3. **JSON Result** - Use `--output` to save full session data
 
-## 使用场景
+## Use Cases
 
-- **代码审查** - 多角度审查 PR 或代码变更
-- **重构任务** - 协作完成复杂的代码重构
-- **新功能开发** - 从设计到实现的完整协作
-- **Bug 修复** - 定位问题并验证修复
-- **文档完善** - 补充和改进项目文档
+- **Code Review** - Multi-perspective PR review
+- **Refactoring** - Collaborative complex refactoring
+- **New Features** - Design to implementation collaboration
+- **Bug Fixing** - Locate and verify fixes
+- **Documentation** - Improve project documentation
 
-## 注意事项
-
-- 需要安装 Claude Code CLI (`claude` 命令)
-- 每个 agent 会真的修改文件，建议在 git 分支上使用
-- 默认最大 15 轮，可通过 `--max-rounds` 调整
-- 如果长时间无法达成共识，检查任务描述是否清晰
-
-## 依赖
+## Requirements
 
 - Node.js 18+
-- Claude Code CLI（`claude` 命令可用）
+- Claude Code CLI (`claude` command available)
+
+## Notes
+
+- Each agent actually modifies files—recommend using on git branches
+- Default max 15 rounds, adjust with `--max-rounds`
+- If consensus takes too long, check if task description is clear
