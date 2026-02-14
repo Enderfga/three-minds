@@ -6,7 +6,8 @@ export interface AgentPersona {
   name: string;           // 显示名称
   emoji: string;          // 标识 emoji
   persona: string;        // 人设描述（会作为 system prompt 的一部分）
-  model?: string;         // 模型（可选，如 gpt-5.2-chat、gemini-3-pro-preview、claude-opus-4-5）
+  model?: string;         // 模型名称（如 gemini-2.0-flash、gpt-4o、claude-opus-4-5）
+  baseUrl?: string;       // 自定义 API 端点（用于 proxy，如 http://127.0.0.1:8082）
 }
 
 export interface CouncilConfig {

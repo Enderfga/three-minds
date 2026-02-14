@@ -2,13 +2,19 @@
 
 **Multi-Agent Collaboration System** - Three AI agents working together on the same codebase. Not just talking—they actually read files, write code, and run tests.
 
-## Features
+## What's Special?
 
-- 🔧 **Real Execution** - Each agent can read files, write code, run tests via Claude Code CLI
-- 👥 **Multi-Perspective** - Three agents with different expertise review each other's work
-- ✅ **Consensus Voting** - All must vote YES to finish, ensuring quality
-- 📁 **Shared Workspace** - Collaborate on the same project directory
-- 📝 **Full Transcript** - Auto-saves discussion and changes history
+Three Minds uses **Claude Code** as the unified agent framework, with proxy support for **any model** (GPT, Gemini, etc.). This means:
+
+- 🔧 **Full Agent Loop** - Every model gets Claude Code's powerful tool use capabilities
+- 🤖 **True Multi-Model** - GPT, Gemini, Claude debating with the same capabilities
+- 👥 **Real Collaboration** - Three agents review each other's actual code changes
+
+## Requirements
+
+- Node.js 18+
+- **Claude Code CLI** (`claude` command must be available)
+- **[claude-code-skill](https://github.com/Enderfga/openclaw-claude-code-skill)** (required for multi-model proxy)
 
 ## Installation
 
@@ -27,84 +33,103 @@ npm run build
 npm link
 ```
 
-## Requirements
-
-- Node.js 18+
-- **CLI Tools** (install based on models you use):
-  - `claude` - Claude Code CLI (for Claude models)
-  - `gemini` - Google Gemini CLI (for Gemini models)
-  - `codex` - OpenAI Codex CLI (for GPT/Azure models)
-  - `opencode` - OpenCode CLI (for other models)
-
-## Usage
+## Quick Start
 
 ```bash
-# Basic usage
+# Basic usage (3 Claude agents)
 three-minds "Review and improve this project's code quality" --dir ./my-project
 
-# Use code-review preset (security + performance + quality trio)
+# Multi-model: GPT + Gemini + Claude 🌐
+three-minds "Design a scalable API" --config multi-model --dir ./project
+
+# Code review preset
 three-minds "Review all code in src/" --config code-review --dir ./project
-
-# Specify max rounds
-three-minds "Refactor this module" --dir ./module --max-rounds 5
-
-# Save result to JSON
-three-minds "task description" --dir ./project --output result.json
-
-# Quiet mode (no terminal output)
-three-minds "task" --dir ./project --quiet --output result.json
 ```
 
 ## Multi-Model Support 🌐
 
-Three Minds automatically selects the right CLI based on the model specified for each agent:
+Three Minds supports **any model** through Claude Code's proxy feature. All agents share the same powerful tool use capabilities—only the "brain" differs.
 
-| Model Pattern | CLI Used | Example |
-|---------------|----------|---------|
-| `claude*`, `anthropic/*` | Claude Code | `claude-opus-4-6` |
-| `gemini-*`, `google/*` | Gemini CLI | `gemini-3-pro-preview` |
-| `gpt-*`, `o1*`, `o3*`, `o4*` | Codex CLI | `gpt-4o` |
-| `azure/*` | Codex (Azure) | `azure/gpt-5.2-chat` |
-| Others | OpenCode | `deepseek-coder` |
+### How It Works
 
-### Mixed-Model Collaboration
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   GPT-4o    │     │  Gemini 2.0 │     │   Claude    │
+└──────┬──────┘     └──────┬──────┘     └──────┬──────┘
+       │                   │                   │
+       ▼                   ▼                   ▼
+┌──────────────────────────────────────────────────────┐
+│              Claude Code Agent Framework              │
+│  (tool use, file ops, code execution, multi-turn)    │
+└──────────────────────────────────────────────────────┘
+       │                   │                   │
+       ▼                   ▼                   ▼
+   via proxy           via proxy            direct
+```
 
-Use the `multi-model` preset to have GPT, Gemini, and Claude debate together:
+### Setup Multi-Model
+
+1. **Start the proxy** (from [claude-code-skill](https://github.com/Enderfga/openclaw-claude-code-skill)):
 
 ```bash
-three-minds "Design a scalable API" --config multi-model --dir ./project
+# Using claude-code-proxy
+cd ~/claude-code-proxy && source .venv/bin/activate
+uvicorn server:app --host 127.0.0.1 --port 8082
 ```
 
-Each agent uses its native CLI while sharing the same workspace!
+2. **Run with multi-model config**:
 
-### Environment Setup
-
-Create `~/.openclaw/.env` with your API keys:
-
-```env
-ANTHROPIC_API_KEY=sk-ant-...
-GOOGLE_API_KEY=AIza...
-AZURE_ENDPOINT=https://your-resource.openai.azure.com/openai/v1
-AZURE_AI_KEY=...
+```bash
+three-minds "Design and implement a REST API" --config multi-model --dir ./project
 ```
+
+### Custom Multi-Model Config
+
+```json
+{
+  "name": "My AI Team",
+  "agents": [
+    {
+      "name": "GPT",
+      "emoji": "🧠",
+      "model": "gpt-4o",
+      "baseUrl": "http://127.0.0.1:8082",
+      "persona": "You are GPT-4o, focusing on logical analysis..."
+    },
+    {
+      "name": "Gemini",
+      "emoji": "💎",
+      "model": "gemini-2.0-flash",
+      "baseUrl": "http://127.0.0.1:8082",
+      "persona": "You are Gemini, focusing on creative solutions..."
+    },
+    {
+      "name": "Claude",
+      "emoji": "🎭",
+      "model": "claude-sonnet-4-20250514",
+      "persona": "You are Claude, focusing on code quality..."
+    }
+  ],
+  "maxRounds": 10
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `model` | Model name (e.g., `gpt-4o`, `gemini-2.0-flash`) |
+| `baseUrl` | Proxy endpoint for non-Claude models |
 
 ## Preset Configurations
 
-### multi-model - Mixed AI Collaboration ⭐
+### multi-model ⭐ - Mixed AI Collaboration
 
-Three top AI models working together, each using native CLI:
-
-| Agent | Model | CLI |
+| Agent | Model | Via |
 |-------|-------|-----|
-| 🧠 GPT-5 | azure/gpt-5.2-chat | Codex |
-| 💎 Gemini | gemini-3-pro-preview | Gemini |
-| 🎭 Claude | claude-opus-4-6 | Claude Code |
+| 🧠 GPT | gpt-4o | proxy |
+| 💎 Gemini | gemini-2.0-flash | proxy |
+| 🎭 Claude | claude-sonnet-4 | direct |
 
-```bash
-three-minds "Review this architecture" --config multi-model --dir ./project
-```
-
-### Default - Code Collaboration Trio
+### default - Code Collaboration Trio
 - 🏗️ **Architect** - Code structure, design patterns, scalability
 - ⚙️ **Engineer** - Code quality, error handling, performance
 - 🔍 **Reviewer** - Code standards, potential bugs, documentation
@@ -119,44 +144,26 @@ three-minds "Review this architecture" --config multi-model --dir ./project
 - 💡 **Creative Thinker** - Novel approaches, unconventional ideas
 - 🔬 **Feasibility Analyst** - Technical constraints, implementation path
 
-### paper-writing - Paper Writing Trio
-- 📝 **Content Reviewer** - Argument structure, logical flow
-- ✍️ **Language Editor** - Grammar, clarity, academic tone
-- 🎨 **Presentation Advisor** - Figures, tables, visual organization
-
-## Custom Configuration
-
-Create a JSON config file:
-
-```json
-{
-  "name": "My Custom Trio",
-  "agents": [
-    {
-      "name": "Expert A",
-      "emoji": "🎯",
-      "persona": "You are a... focusing on..."
-    },
-    {
-      "name": "Expert B",
-      "emoji": "🔬",
-      "persona": "You are a... specializing in..."
-    },
-    {
-      "name": "Expert C",
-      "emoji": "📊",
-      "persona": "You are a... responsible for..."
-    }
-  ],
-  "maxRounds": 10,
-  "projectDir": "."
-}
-```
-
-Then run:
+## Usage
 
 ```bash
-three-minds "task description" --config ./my-config.json --dir ./project
+# Basic usage
+three-minds "task description" --dir ./project
+
+# Use a preset config
+three-minds "task" --config code-review --dir ./project
+
+# Custom config file
+three-minds "task" --config ./my-config.json --dir ./project
+
+# Specify max rounds
+three-minds "task" --dir ./project --max-rounds 5
+
+# Save result to JSON
+three-minds "task" --dir ./project --output result.json
+
+# Quiet mode
+three-minds "task" --dir ./project --quiet --output result.json
 ```
 
 ## How It Works
@@ -165,19 +172,19 @@ three-minds "task description" --config ./my-config.json --dir ./project
 ┌──────────────────────────────────────────┐
 │              Round N                      │
 ├──────────────────────────────────────────┤
-│  🏗️ Architect                            │
+│  🏗️ Agent 1                              │
 │  → Reads files, reviews structure         │
-│  → Executes necessary refactoring         │
+│  → Executes necessary changes             │
 │  → Votes [CONSENSUS: YES/NO]             │
 ├──────────────────────────────────────────┤
-│  ⚙️ Engineer                             │
-│  → Reviews architect's changes            │
-│  → Implements details, fixes issues       │
+│  ⚙️ Agent 2                              │
+│  → Reviews Agent 1's changes              │
+│  → Implements improvements                │
 │  → Votes [CONSENSUS: YES/NO]             │
 ├──────────────────────────────────────────┤
-│  🔍 Reviewer                             │
+│  🔍 Agent 3                              │
 │  → Reviews all changes                    │
-│  → Checks standards, bugs, docs           │
+│  → Checks standards and quality           │
 │  → Votes [CONSENSUS: YES/NO]             │
 └──────────────────────────────────────────┘
           ↓
@@ -189,8 +196,8 @@ three-minds "task description" --config ./my-config.json --dir ./project
 ## Output
 
 1. **Terminal Output** - Real-time progress and voting results
-2. **Markdown Transcript** - Auto-saved in project directory as `three-minds-{timestamp}.md`
-3. **JSON Result** - Use `--output result.json` to save full session data
+2. **Markdown Transcript** - Auto-saved as `three-minds-{timestamp}.md`
+3. **JSON Result** - Use `--output result.json` for full session data
 
 ## Use Cases
 
@@ -200,14 +207,27 @@ three-minds "task description" --config ./my-config.json --dir ./project
 - **Bug Fixing** - Locate problems and verify fixes
 - **Documentation** - Improve project documentation
 - **Research** - Brainstorm and evaluate ideas
-- **Writing** - Collaborative paper or doc writing
+
+## Environment Setup
+
+Create `~/.openclaw/.env` with your API keys:
+
+```env
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+For multi-model, the proxy handles API keys for other providers.
 
 ## Notes
 
 - Each agent actually modifies files—recommend using on git branches
 - Default max 15 rounds, adjust with `--max-rounds`
-- If consensus takes too long, check if task description is clear
 - Each agent has 5 minute timeout per round
+- Multi-model requires the proxy server running
+
+## Related Projects
+
+- **[claude-code-skill](https://github.com/Enderfga/openclaw-claude-code-skill)** - Required for multi-model proxy support
 
 ## License
 

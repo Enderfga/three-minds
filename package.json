@@ -1,6 +1,6 @@
 {
   "name": "three-minds",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "三个能干活的 AI 分身协作系统",
   "main": "dist/index.js",
   "bin": {

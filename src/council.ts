@@ -1,7 +1,9 @@
 /**
  * Three Minds v2 - 核心协作引擎
  * 
- * 支持多 CLI 后端：Claude Code、OpenCode、Codex、Gemini
+ * 统一使用 Claude Code 框架：
+ * - 原生 Claude 模型：直接调用 claude CLI
+ * - 其他模型（Gemini/GPT）：通过 claude-code-skill + proxy 调用
  */
 
 import { v4 as uuidv4 } from 'uuid';
@@ -38,78 +40,111 @@ function loadEnvFile(): Record<string, string> {
   return result;
 }
 
-/**
- * 统一的 CLI 执行函数
- */
-function spawnCli(
-  command: string,
-  args: string[],
-  options: {
-    cwd: string;
-    timeoutMs: number;
-    env?: NodeJS.ProcessEnv;
-    cliName: string;
-  }
-): string {
-  const { cwd, timeoutMs, env = process.env, cliName } = options;
-  
-  const result = spawnSync(command, args, {
-    cwd,
-    encoding: 'utf-8',
-    timeout: timeoutMs,
-    maxBuffer: 50 * 1024 * 1024,
-    env,
-  });
-
-  if (result.error) throw result.error;
-  if (result.status !== 0 && result.stderr) {
-    console.error(`[${cliName} stderr]: ${result.stderr}`);
-  }
-  return (result.stdout as string) || '';
-}
+// 默认超时时间
+const DEFAULT_TIMEOUT_MS = 300000;  // 5 分钟
+const MIN_TASK_LENGTH = 5;  // 最小任务描述长度
 
 /**
- * 判断模型应该使用哪个 CLI
+ * 判断是否需要使用 proxy（非 Claude 模型）
  */
-function getCliForModel(model?: string): 'claude' | 'opencode' | 'codex' | 'gemini' {
-  if (!model) return 'claude';  // 默认使用 Claude Code
-  
+function needsProxy(model?: string): boolean {
+  if (!model) return false;
   const m = model.toLowerCase();
-  
-  // Gemini 模型 -> Gemini CLI
-  if (m.startsWith('gemini-') || m.startsWith('google/')) {
-    return 'gemini';
-  }
-  
-  // OpenAI 模型 (gpt-*, o1, o3, o4) -> Codex CLI
-  if (m.startsWith('gpt-') || m.startsWith('o1') || m.startsWith('o3') || m.startsWith('o4')) {
-    return 'codex';
-  }
-  
-  // Azure 模型 -> Codex CLI (通过 backend-api 代理)
-  if (m.startsWith('azure/')) {
-    return 'codex';
-  }
-  
-  // Claude/Anthropic 模型 -> Claude Code
+  // Claude/Anthropic 模型不需要 proxy
   if (m.startsWith('claude') || m.startsWith('anthropic/')) {
-    return 'claude';
+    return false;
   }
-  
-  // 其他模型默认用 OpenCode（支持最广）
-  return 'opencode';
+  return true;
 }
 
 /**
- * 执行 Claude Code CLI
+ * 通过 claude-code-skill 执行任务（使用 proxy）
+ * 
+ * 适用于 Gemini/GPT 等非 Claude 模型
  */
-function runClaudeCli(
+function runViaClaudeCodeSkill(
   prompt: string,
   systemPrompt: string,
   workDir: string,
-  model?: string,
-  timeoutMs: number = 300000
+  options: {
+    model?: string;
+    baseUrl?: string;
+    timeoutMs?: number;
+  } = {}
 ): string {
+  const { model, baseUrl, timeoutMs = DEFAULT_TIMEOUT_MS } = options;
+  
+  // 生成唯一 session 名称
+  const sessionName = `three-minds-${Date.now()}`;
+  
+  // 1. 启动 session
+  const startArgs = [
+    'session-start', sessionName,
+    '-d', workDir,
+    '--permission-mode', 'acceptEdits',
+    '--append-system-prompt', systemPrompt,
+  ];
+  
+  if (model) {
+    startArgs.push('--model', model);
+  }
+  if (baseUrl) {
+    startArgs.push('--base-url', baseUrl);
+  }
+
+  const startResult = spawnSync('claude-code-skill', startArgs, {
+    encoding: 'utf-8',
+    timeout: 30000,  // 30s 启动超时
+  });
+
+  if (startResult.error) {
+    throw new Error(`Failed to start session: ${startResult.error.message}`);
+  }
+
+  try {
+    // 2. 发送任务
+    const sendArgs = [
+      'session-send', sessionName, prompt,
+      '-t', String(timeoutMs),
+    ];
+
+    const sendResult = spawnSync('claude-code-skill', sendArgs, {
+      cwd: workDir,
+      encoding: 'utf-8',
+      timeout: timeoutMs + 10000,  // 额外 10s buffer
+      maxBuffer: 50 * 1024 * 1024,
+    });
+
+    if (sendResult.error) {
+      throw sendResult.error;
+    }
+
+    return (sendResult.stdout as string) || '';
+  } finally {
+    // 3. 清理 session
+    spawnSync('claude-code-skill', ['session-stop', sessionName], {
+      encoding: 'utf-8',
+      timeout: 10000,
+    });
+  }
+}
+
+/**
+ * 直接执行 Claude Code CLI
+ * 
+ * 适用于原生 Claude 模型（无需 proxy）
+ */
+function runClaudeCodeDirect(
+  prompt: string,
+  systemPrompt: string,
+  workDir: string,
+  options: {
+    model?: string;
+    timeoutMs?: number;
+  } = {}
+): string {
+  const { model, timeoutMs = DEFAULT_TIMEOUT_MS } = options;
+  
   const args = [
     '--print',
     '--output-format', 'text',
@@ -121,6 +156,7 @@ function runClaudeCli(
   if (model) {
     args.push('--model', model);
   }
+  
   args.push(prompt);
 
   // 构建环境变量
@@ -129,100 +165,21 @@ function runClaudeCli(
   if (!env.HOME) env.HOME = os.homedir();
   if (!env.ANTHROPIC_API_KEY && envVars.ANTHROPIC_API_KEY) {
     env.ANTHROPIC_API_KEY = envVars.ANTHROPIC_API_KEY;
-    console.log('[Claude CLI] Loaded ANTHROPIC_API_KEY from .openclaw/.env');
   }
 
-  return spawnCli('claude', args, { cwd: workDir, timeoutMs, env, cliName: 'Claude CLI' });
-}
+  const result = spawnSync('claude', args, {
+    cwd: workDir,
+    encoding: 'utf-8',
+    timeout: timeoutMs,
+    maxBuffer: 50 * 1024 * 1024,
+    env,
+  });
 
-/**
- * 执行 OpenCode CLI
- */
-function runOpencodeCli(
-  prompt: string,
-  systemPrompt: string,
-  workDir: string,
-  model?: string,
-  timeoutMs: number = 300000
-): string {
-  const fullPrompt = `[System Instructions]\n${systemPrompt}\n\n[Task]\n${prompt}`;
-  const args = ['run'];
-  if (model) args.push('-m', model);
-  args.push(fullPrompt);
-
-  return spawnCli('opencode', args, { cwd: workDir, timeoutMs, cliName: 'OpenCode CLI' });
-}
-
-/**
- * 执行 Codex CLI (OpenAI 原生 / Azure 原生)
- * 
- * Azure 模型格式: azure/gpt-4o
- * OpenAI 模型格式: gpt-4o, o1, o3, o4 等
- */
-function runCodexCli(
-  prompt: string,
-  systemPrompt: string,
-  workDir: string,
-  model?: string,
-  timeoutMs: number = 300000
-): string {
-  const fullPrompt = `[System Instructions]\n${systemPrompt}\n\n[Task]\n${prompt}`;
-  const args = ['exec', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check', '-C', workDir];
-  
-  const envVars = loadEnvFile();
-  const env = { ...process.env };
-  
-  // Azure 模型特殊处理
-  let actualModel = model;
-  if (model?.toLowerCase().startsWith('azure/')) {
-    actualModel = model.slice(6);  // "azure/gpt-4o" -> "gpt-4o"
-    args.push(
-      '-c', 'model_provider=azure',
-      '-c', `model_providers.azure.base_url="${envVars.AZURE_ENDPOINT || 'https://YOUR_AZURE_ENDPOINT.openai.azure.com/openai/v1'}"`,
-      '-c', 'model_providers.azure.env_key="AZURE_OPENAI_API_KEY"',
-      '-c', 'model_providers.azure.wire_api="responses"',
-      '-c', 'model_reasoning_effort="medium"'
-    );
-    if (envVars.AZURE_AI_KEY) env.AZURE_OPENAI_API_KEY = envVars.AZURE_AI_KEY;
-    console.log(`[Codex Azure] Using model: ${actualModel}`);
+  if (result.error) throw result.error;
+  if (result.status !== 0 && result.stderr) {
+    console.error(`[Claude Code stderr]: ${result.stderr}`);
   }
-  
-  if (actualModel) args.push('-m', actualModel);
-  args.push(fullPrompt);
-
-  return spawnCli('codex', args, { cwd: workDir, timeoutMs, env, cliName: 'Codex CLI' });
-}
-
-/**
- * 执行 Gemini CLI
- */
-function runGeminiCli(
-  prompt: string,
-  systemPrompt: string,
-  workDir: string,
-  model?: string,
-  timeoutMs: number = 300000
-): string {
-  const fullPrompt = `[System Instructions]\n${systemPrompt}\n\n[Task]\n${prompt}`;
-  const args = ['-y', '-o', 'text'];
-  
-  if (model) {
-    const cleanModel = model.replace(/^google\//, '');
-    args.push('-m', cleanModel);
-  }
-  args.push('-p', fullPrompt);
-
-  const envVars = loadEnvFile();
-  const env = { ...process.env };
-  if (envVars.GOOGLE_API_KEY) {
-    env.GOOGLE_API_KEY = envVars.GOOGLE_API_KEY;
-    env.GEMINI_API_KEY = envVars.GOOGLE_API_KEY;
-  }
-  if (!env.GOOGLE_API_KEY) {
-    console.warn('[Gemini CLI] Warning: GOOGLE_API_KEY not found');
-  }
-
-  return spawnCli('gemini', args, { cwd: workDir, timeoutMs, env, cliName: 'Gemini CLI' });
+  return (result.stdout as string) || '';
 }
 
 /**
@@ -232,29 +189,31 @@ function runAgent(
   prompt: string,
   systemPrompt: string,
   workDir: string,
-  model?: string,
-  timeoutMs: number = 300000
-): { output: string; cli: string } {
-  const cli = getCliForModel(model);
+  options: {
+    model?: string;
+    baseUrl?: string;
+    timeoutMs?: number;
+  } = {}
+): { output: string; via: string } {
+  const { model, baseUrl, timeoutMs } = options;
   
-  let output: string;
-  switch (cli) {
-    case 'gemini':
-      output = runGeminiCli(prompt, systemPrompt, workDir, model, timeoutMs);
-      break;
-    case 'codex':
-      output = runCodexCli(prompt, systemPrompt, workDir, model, timeoutMs);
-      break;
-    case 'opencode':
-      output = runOpencodeCli(prompt, systemPrompt, workDir, model, timeoutMs);
-      break;
-    case 'claude':
-    default:
-      output = runClaudeCli(prompt, systemPrompt, workDir, model, timeoutMs);
-      break;
+  // 判断是否需要 proxy
+  if (needsProxy(model) || baseUrl) {
+    // 使用 claude-code-skill + proxy
+    const output = runViaClaudeCodeSkill(prompt, systemPrompt, workDir, {
+      model,
+      baseUrl,
+      timeoutMs,
+    });
+    return { output, via: 'claude-code-skill' };
+  } else {
+    // 直接使用 Claude Code CLI
+    const output = runClaudeCodeDirect(prompt, systemPrompt, workDir, {
+      model,
+      timeoutMs,
+    });
+    return { output, via: 'claude-cli' };
   }
-  
-  return { output, cli };
 }
 
 /**
@@ -345,10 +304,6 @@ ${agent.persona}
 - 每次回复末尾必须投票 [CONSENSUS: YES] 或 [CONSENSUS: NO]`;
 }
 
-// 默认超时时间（从配置读取或使用默认值）
-const DEFAULT_TIMEOUT_MS = 300000;  // 5 分钟
-const MIN_TASK_LENGTH = 5;  // 最小任务描述长度
-
 /**
  * Three Minds 协作引擎
  */
@@ -385,7 +340,7 @@ export class Council {
       startTime: new Date().toISOString(),
     };
 
-    this.log(`\n🧠 Three Minds v2 - 三个臭皮匠协作系统\n`);
+    this.log(`\n🧠 Three Minds v2.1 - 三个臭皮匠协作系统\n`);
     this.log(`📋 任务: ${task}`);
     this.log(`📁 工作目录: ${this.config.projectDir}`);
     this.log(`👥 参与者: ${this.config.agents.map(a => `${a.emoji} ${a.name}`).join(', ')}`);
@@ -400,9 +355,9 @@ export class Council {
 
         // 依次让每个 agent 工作
         for (const agent of this.config.agents) {
-          const cli = getCliForModel(agent.model);
-          const modelInfo = agent.model ? ` [${cli}: ${agent.model}]` : ` [${cli}]`;
-          this.log(`${agent.emoji} ${agent.name}${modelInfo} 开始工作...`);
+          const modelInfo = agent.model ? ` [${agent.model}]` : ' [claude-default]';
+          const proxyInfo = agent.baseUrl ? ` via proxy` : '';
+          this.log(`${agent.emoji} ${agent.name}${modelInfo}${proxyInfo} 开始工作...`);
 
           // 构建 prompt
           const prompt = buildAgentPrompt(
@@ -415,13 +370,16 @@ export class Council {
           const systemPrompt = buildSystemPrompt(agent, this.config.agents);
 
           try {
-            // 调用对应的 CLI（根据模型自动选择）
-            const { output: content, cli } = runAgent(
+            // 统一入口执行
+            const { output: content, via } = runAgent(
               prompt,
               systemPrompt,
               this.config.projectDir,
-              agent.model,
-              this.timeoutMs
+              {
+                model: agent.model,
+                baseUrl: agent.baseUrl,
+                timeoutMs: this.timeoutMs,
+              }
             );
 
             const consensus = parseConsensus(content);
@@ -432,7 +390,7 @@ export class Council {
               round,
               content,
               consensus,
-              sessionKey: `${cli}-${agent.name}-r${round}`,
+              sessionKey: `${via}-${agent.name}-r${round}`,
               timestamp: new Date().toISOString(),
             };
             session.responses.push(response);
@@ -440,7 +398,7 @@ export class Council {
             // 打印摘要
             const lines = content.split('\n').filter(l => l.trim());
             const preview = lines.slice(0, 3).join(' ').slice(0, 150);
-            this.log(`  ✅ 完成 | 共识: ${consensus ? 'YES ✓' : 'NO ✗'}`);
+            this.log(`  ✅ 完成 (${via}) | 共识: ${consensus ? 'YES ✓' : 'NO ✗'}`);
             this.log(`  📝 ${preview}...`);
           } catch (error: any) {
             this.log(`  ❌ 错误: ${error.message}`);
