@@ -30,7 +30,11 @@ npm link
 ## Requirements
 
 - Node.js 18+
-- **Claude Code CLI** (`claude` command must be available)
+- **CLI Tools** (install based on models you use):
+  - `claude` - Claude Code CLI (for Claude models)
+  - `gemini` - Google Gemini CLI (for Gemini models)
+  - `codex` - OpenAI Codex CLI (for GPT/Azure models)
+  - `opencode` - OpenCode CLI (for other models)
 
 ## Usage
 
@@ -51,7 +55,54 @@ three-minds "task description" --dir ./project --output result.json
 three-minds "task" --dir ./project --quiet --output result.json
 ```
 
+## Multi-Model Support 🌐
+
+Three Minds automatically selects the right CLI based on the model specified for each agent:
+
+| Model Pattern | CLI Used | Example |
+|---------------|----------|---------|
+| `claude*`, `anthropic/*` | Claude Code | `claude-opus-4-6` |
+| `gemini-*`, `google/*` | Gemini CLI | `gemini-3-pro-preview` |
+| `gpt-*`, `o1*`, `o3*`, `o4*` | Codex CLI | `gpt-4o` |
+| `azure/*` | Codex (Azure) | `azure/gpt-5.2-chat` |
+| Others | OpenCode | `deepseek-coder` |
+
+### Mixed-Model Collaboration
+
+Use the `multi-model` preset to have GPT, Gemini, and Claude debate together:
+
+```bash
+three-minds "Design a scalable API" --config multi-model --dir ./project
+```
+
+Each agent uses its native CLI while sharing the same workspace!
+
+### Environment Setup
+
+Create `~/.openclaw/.env` with your API keys:
+
+```env
+ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_API_KEY=AIza...
+AZURE_ENDPOINT=https://your-resource.openai.azure.com/openai/v1
+AZURE_AI_KEY=...
+```
+
 ## Preset Configurations
+
+### multi-model - Mixed AI Collaboration ⭐
+
+Three top AI models working together, each using native CLI:
+
+| Agent | Model | CLI |
+|-------|-------|-----|
+| 🧠 GPT-5 | azure/gpt-5.2-chat | Codex |
+| 💎 Gemini | gemini-3-pro-preview | Gemini |
+| 🎭 Claude | claude-opus-4-6 | Claude Code |
+
+```bash
+three-minds "Review this architecture" --config multi-model --dir ./project
+```
 
 ### Default - Code Collaboration Trio
 - 🏗️ **Architect** - Code structure, design patterns, scalability
