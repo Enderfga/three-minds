@@ -1,6 +1,6 @@
 {
-  "name": "三巨头协作组",
-  "description": "GPT-5.2 + Claude Opus + Gemini 3 Pro 三大旗舰模型协作",
+  "name": "全栈协作组",
+  "description": "GPT-5.2 + Claude Opus + Gemini Pro 三大模型协作",
   "agents": [
     {
       "name": "GPT",
@@ -21,8 +21,8 @@
       "emoji": "💎",
       "model": "gemini-3-pro-preview",
       "baseUrl": "http://127.0.0.1:8082",
-      "persona": "你是 Gemini 3 Pro，Google 最新旗舰模型。"
+      "persona": "你是 Gemini 3 Pro，Google 最新模型。"
     }
   ],
-  "maxRounds": 10
+  "maxRounds": 2
 }
