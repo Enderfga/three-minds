@@ -1,16 +1,14 @@
 /**
- * Three Minds v2 - 核心协作引擎
+ * Three Minds v2.1 - 核心协作引擎
  * 
- * 统一使用 Claude Code 框架：
- * - 原生 Claude 模型：直接调用 claude CLI
- * - 其他模型（Gemini/GPT）：通过 claude-code-skill + proxy 调用
+ * 统一使用 claude-code-skill 调用所有模型
+ * 无论 Claude/GPT/Gemini，都走同一套 agent 框架
  */
 
 import { v4 as uuidv4 } from 'uuid';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import {
   CouncilConfig,
   CouncilSession,
@@ -18,49 +16,14 @@ import {
   AgentPersona,
 } from './types';
 
-/**
- * 从 .openclaw/.env 读取环境变量
- */
-function loadEnvFile(): Record<string, string> {
-  const result: Record<string, string> = {};
-  try {
-    const envPath = path.join(os.homedir(), '.openclaw', '.env');
-    if (fs.existsSync(envPath)) {
-      const content = fs.readFileSync(envPath, 'utf-8');
-      for (const line of content.split('\n')) {
-        const match = line.match(/^([A-Z_]+)=(.+)$/);
-        if (match) {
-          result[match[1]] = match[2].trim();
-        }
-      }
-    }
-  } catch (e) {
-    console.warn('[loadEnvFile] Warning: Could not read .openclaw/.env');
-  }
-  return result;
-}
-
 // 默认超时时间
 const DEFAULT_TIMEOUT_MS = 300000;  // 5 分钟
 const MIN_TASK_LENGTH = 5;  // 最小任务描述长度
 
 /**
- * 判断是否需要使用 proxy（非 Claude 模型）
- */
-function needsProxy(model?: string): boolean {
-  if (!model) return false;
-  const m = model.toLowerCase();
-  // Claude/Anthropic 模型不需要 proxy
-  if (m.startsWith('claude') || m.startsWith('anthropic/')) {
-    return false;
-  }
-  return true;
-}
-
-/**
- * 通过 claude-code-skill 执行任务（使用 proxy）
+ * 通过 claude-code-skill 执行任务
  * 
- * 适用于 Gemini/GPT 等非 Claude 模型
+ * 统一入口：所有模型都通过 claude-code-skill 调用
  */
 function runViaClaudeCodeSkill(
   prompt: string,
@@ -100,6 +63,11 @@ function runViaClaudeCodeSkill(
   if (startResult.error) {
     throw new Error(`Failed to start session: ${startResult.error.message}`);
   }
+  
+  // 检查启动是否成功
+  if (startResult.stderr && startResult.stderr.includes('error')) {
+    throw new Error(`Session start failed: ${startResult.stderr}`);
+  }
 
   try {
     // 2. 发送任务
@@ -126,93 +94,6 @@ function runViaClaudeCodeSkill(
       encoding: 'utf-8',
       timeout: 10000,
     });
-  }
-}
-
-/**
- * 直接执行 Claude Code CLI
- * 
- * 适用于原生 Claude 模型（无需 proxy）
- */
-function runClaudeCodeDirect(
-  prompt: string,
-  systemPrompt: string,
-  workDir: string,
-  options: {
-    model?: string;
-    timeoutMs?: number;
-  } = {}
-): string {
-  const { model, timeoutMs = DEFAULT_TIMEOUT_MS } = options;
-  
-  const args = [
-    '--print',
-    '--output-format', 'text',
-    '--append-system-prompt', systemPrompt,
-    '--dangerously-skip-permissions',
-    '--max-turns', '10',
-  ];
-  
-  if (model) {
-    args.push('--model', model);
-  }
-  
-  args.push(prompt);
-
-  // 构建环境变量
-  const envVars = loadEnvFile();
-  const env = { ...process.env };
-  if (!env.HOME) env.HOME = os.homedir();
-  if (!env.ANTHROPIC_API_KEY && envVars.ANTHROPIC_API_KEY) {
-    env.ANTHROPIC_API_KEY = envVars.ANTHROPIC_API_KEY;
-  }
-
-  const result = spawnSync('claude', args, {
-    cwd: workDir,
-    encoding: 'utf-8',
-    timeout: timeoutMs,
-    maxBuffer: 50 * 1024 * 1024,
-    env,
-  });
-
-  if (result.error) throw result.error;
-  if (result.status !== 0 && result.stderr) {
-    console.error(`[Claude Code stderr]: ${result.stderr}`);
-  }
-  return (result.stdout as string) || '';
-}
-
-/**
- * 统一的 Agent 执行入口
- */
-function runAgent(
-  prompt: string,
-  systemPrompt: string,
-  workDir: string,
-  options: {
-    model?: string;
-    baseUrl?: string;
-    timeoutMs?: number;
-  } = {}
-): { output: string; via: string } {
-  const { model, baseUrl, timeoutMs } = options;
-  
-  // 判断是否需要 proxy
-  if (needsProxy(model) || baseUrl) {
-    // 使用 claude-code-skill + proxy
-    const output = runViaClaudeCodeSkill(prompt, systemPrompt, workDir, {
-      model,
-      baseUrl,
-      timeoutMs,
-    });
-    return { output, via: 'claude-code-skill' };
-  } else {
-    // 直接使用 Claude Code CLI
-    const output = runClaudeCodeDirect(prompt, systemPrompt, workDir, {
-      model,
-      timeoutMs,
-    });
-    return { output, via: 'claude-cli' };
   }
 }
 
@@ -250,7 +131,6 @@ function buildAgentPrompt(
         history += `### 第 ${currentRound} 轮\n\n`;
       }
       const cleanContent = resp.content.replace(/\[CONSENSUS:\s*(YES|NO)\]/gi, '').trim();
-      // 只保留关键信息，避免 prompt 太长
       const preview = cleanContent.length > 800 ? cleanContent.slice(0, 800) + '...' : cleanContent;
       history += `**${resp.agent}** (${resp.consensus ? '✅同意结束' : '❌继续'}):\n${preview}\n\n`;
     }
@@ -315,15 +195,10 @@ export class Council {
   constructor(config: CouncilConfig, quiet: boolean = false) {
     this.config = config;
     this.quiet = quiet;
-    // 从配置读取超时时间，避免硬编码
     this.timeoutMs = (config as any).timeoutMs || DEFAULT_TIMEOUT_MS;
   }
 
-  /**
-   * 开始协作
-   */
   async run(task: string): Promise<CouncilSession> {
-    // 输入验证
     if (!task || typeof task !== 'string') {
       throw new Error('Task must be a non-empty string');
     }
@@ -331,6 +206,7 @@ export class Council {
     if (trimmedTask.length < MIN_TASK_LENGTH) {
       throw new Error(`Task description too short (min ${MIN_TASK_LENGTH} chars)`);
     }
+    
     const session: CouncilSession = {
       id: uuidv4(),
       task: trimmedTask,
@@ -340,11 +216,12 @@ export class Council {
       startTime: new Date().toISOString(),
     };
 
-    this.log(`\n🧠 Three Minds v2.1 - 三个臭皮匠协作系统\n`);
+    this.log(`\n🧠 Three Minds v2.1 - 统一 Agent 框架\n`);
     this.log(`📋 任务: ${task}`);
     this.log(`📁 工作目录: ${this.config.projectDir}`);
     this.log(`👥 参与者: ${this.config.agents.map(a => `${a.emoji} ${a.name}`).join(', ')}`);
     this.log(`⏱️  最大轮数: ${this.config.maxRounds}`);
+    this.log(`🔌 统一通过 claude-code-skill 调用`);
     this.log(`${'━'.repeat(60)}\n`);
 
     try {
@@ -353,58 +230,40 @@ export class Council {
 
         const roundVotes: boolean[] = [];
 
-        // 依次让每个 agent 工作
         for (const agent of this.config.agents) {
-          const modelInfo = agent.model ? ` [${agent.model}]` : ' [claude-default]';
-          const proxyInfo = agent.baseUrl ? ` via proxy` : '';
+          const modelInfo = agent.model ? ` [${agent.model}]` : ' [default]';
+          const proxyInfo = agent.baseUrl ? ` via ${agent.baseUrl}` : '';
           this.log(`${agent.emoji} ${agent.name}${modelInfo}${proxyInfo} 开始工作...`);
 
-          // 构建 prompt
-          const prompt = buildAgentPrompt(
-            agent,
-            trimmedTask,
-            round,
-            session.responses,
-            this.config.agents
-          );
+          const prompt = buildAgentPrompt(agent, trimmedTask, round, session.responses, this.config.agents);
           const systemPrompt = buildSystemPrompt(agent, this.config.agents);
 
           try {
-            // 统一入口执行
-            const { output: content, via } = runAgent(
-              prompt,
-              systemPrompt,
-              this.config.projectDir,
-              {
-                model: agent.model,
-                baseUrl: agent.baseUrl,
-                timeoutMs: this.timeoutMs,
-              }
-            );
+            const content = runViaClaudeCodeSkill(prompt, systemPrompt, this.config.projectDir, {
+              model: agent.model,
+              baseUrl: agent.baseUrl,
+              timeoutMs: this.timeoutMs,
+            });
 
             const consensus = parseConsensus(content);
             roundVotes.push(consensus);
 
-            const response: AgentResponse = {
+            session.responses.push({
               agent: agent.name,
               round,
               content,
               consensus,
-              sessionKey: `${via}-${agent.name}-r${round}`,
+              sessionKey: `claude-code-skill-${agent.name}-r${round}`,
               timestamp: new Date().toISOString(),
-            };
-            session.responses.push(response);
+            });
 
-            // 打印摘要
             const lines = content.split('\n').filter(l => l.trim());
             const preview = lines.slice(0, 3).join(' ').slice(0, 150);
-            this.log(`  ✅ 完成 (${via}) | 共识: ${consensus ? 'YES ✓' : 'NO ✗'}`);
+            this.log(`  ✅ 完成 | 共识: ${consensus ? 'YES ✓' : 'NO ✗'}`);
             this.log(`  📝 ${preview}...`);
           } catch (error: any) {
             this.log(`  ❌ 错误: ${error.message}`);
             roundVotes.push(false);
-            
-            // 记录失败响应
             session.responses.push({
               agent: agent.name,
               round,
@@ -414,13 +273,10 @@ export class Council {
               timestamp: new Date().toISOString(),
             });
           }
-
           this.log('');
         }
 
-        // 检查共识
-        const allYes = roundVotes.length === this.config.agents.length && 
-                       roundVotes.every(v => v === true);
+        const allYes = roundVotes.length === this.config.agents.length && roundVotes.every(v => v);
         
         if (allYes) {
           this.log(`\n✅ 共识达成！(第 ${round} 轮)\n`);
@@ -438,13 +294,9 @@ export class Council {
       }
 
       session.endTime = new Date().toISOString();
-
-      // 生成总结
       session.finalSummary = this.generateSummary(session);
       this.log(`\n${'━'.repeat(60)}`);
       this.log(`\n${session.finalSummary}`);
-
-      // 保存讨论记录到工作目录
       this.saveTranscript(session);
 
       return session;
@@ -457,41 +309,29 @@ export class Council {
   }
 
   private log(message: string) {
-    if (!this.quiet) {
-      console.log(message);
-    }
+    if (!this.quiet) console.log(message);
   }
 
   private generateSummary(session: CouncilSession): string {
     const lines: string[] = [];
-    
     lines.push(`# 📋 协作总结\n`);
     lines.push(`- **任务**: ${session.task}`);
     lines.push(`- **状态**: ${session.status === 'consensus' ? '✅ 达成共识' : '⚠️ 达到最大轮数'}`);
-    
-    const maxRound = session.responses.length > 0 
-      ? Math.max(...session.responses.map(r => r.round))
-      : 0;
+    const maxRound = session.responses.length > 0 ? Math.max(...session.responses.map(r => r.round)) : 0;
     lines.push(`- **总轮数**: ${maxRound}`);
     lines.push(`- **工作目录**: ${session.config.projectDir}\n`);
-
-    // 每个 agent 的最后发言
     lines.push(`## 各成员最终状态\n`);
     const lastResponses = session.responses.filter(r => r.round === maxRound);
-    
     for (const resp of lastResponses) {
       const agent = session.config.agents.find(a => a.name === resp.agent);
       const emoji = agent?.emoji || '🤖';
       lines.push(`### ${emoji} ${resp.agent}`);
       lines.push(`- **共识投票**: ${resp.consensus ? '✅ YES' : '❌ NO'}`);
-      
-      // 提取关键内容
       const cleanContent = resp.content.replace(/\[CONSENSUS:\s*(YES|NO)\]/gi, '').trim();
       const preview = cleanContent.slice(0, 400) + (cleanContent.length > 400 ? '...' : '');
       lines.push(`- **最后发言**:\n${preview}`);
       lines.push('');
     }
-
     return lines.join('\n');
   }
 
@@ -499,13 +339,10 @@ export class Council {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const filename = `three-minds-${timestamp}.md`;
     const filepath = path.join(this.config.projectDir, filename);
-
     let content = `# Three Minds 协作记录\n\n`;
     content += `- **时间**: ${session.startTime}\n`;
     content += `- **任务**: ${session.task}\n`;
-    content += `- **状态**: ${session.status}\n\n`;
-    content += `---\n\n`;
-
+    content += `- **状态**: ${session.status}\n\n---\n\n`;
     let currentRound = 0;
     for (const resp of session.responses) {
       if (resp.round !== currentRound) {
@@ -517,67 +354,33 @@ export class Council {
       content += `### ${emoji} ${resp.agent}\n\n`;
       content += resp.content + '\n\n';
     }
-
     content += `---\n\n`;
     content += session.finalSummary || '';
-
     fs.writeFileSync(filepath, content);
     this.log(`💾 协作记录已保存: ${filepath}`);
   }
 }
 
-/**
- * 加载配置
- */
 export async function loadConfig(configPath: string): Promise<CouncilConfig> {
   const configDir = path.join(__dirname, '..', 'configs');
-  
-  // 检查内置配置
   if (!configPath.includes('/') && !configPath.endsWith('.json')) {
     const builtinPath = path.join(configDir, `${configPath}.json`);
     try {
       const content = fs.readFileSync(builtinPath, 'utf-8');
       return JSON.parse(content);
-    } catch {
-      // 继续尝试作为文件路径
-    }
+    } catch { /* continue */ }
   }
-  
   const content = fs.readFileSync(configPath, 'utf-8');
   return JSON.parse(content);
 }
 
-/**
- * 默认配置
- */
 export function getDefaultConfig(projectDir: string): CouncilConfig {
   return {
     name: '代码协作三人组',
     agents: [
-      {
-        name: '架构师',
-        emoji: '🏗️',
-        persona: `你是一位系统架构师。
-你关注：代码结构、设计模式、可扩展性、长期维护性。
-你会审查代码的整体设计，提出架构层面的改进建议。
-你可以读取文件、修改代码结构、重构模块。`,
-      },
-      {
-        name: '工程师',
-        emoji: '⚙️',
-        persona: `你是一位实现工程师。
-你关注：代码质量、错误处理、边界情况、性能优化。
-你会实际编写和修改代码，确保功能正确实现。
-你可以读取文件、编写代码、运行测试。`,
-      },
-      {
-        name: '审核员',
-        emoji: '🔍',
-        persona: `你是一位代码审核员。
-你关注：代码规范、潜在 bug、安全问题、文档完整性。
-你会仔细审查代码，找出问题并提出修复建议。
-你可以读取文件、添加注释、修复明显问题。`,
-      },
+      { name: '架构师', emoji: '🏗️', persona: '你是一位系统架构师。\n你关注：代码结构、设计模式、可扩展性、长期维护性。' },
+      { name: '工程师', emoji: '⚙️', persona: '你是一位实现工程师。\n你关注：代码质量、错误处理、边界情况、性能优化。' },
+      { name: '审核员', emoji: '🔍', persona: '你是一位代码审核员。\n你关注：代码规范、潜在 bug、安全问题、文档完整性。' },
     ],
     maxRounds: 15,
     projectDir,
